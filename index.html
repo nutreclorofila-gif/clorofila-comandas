@@ -200,9 +200,32 @@ let toastTimer = null;
 let kitchenFilter = 'todos';
 let wasAllReady = {};
 
+function newItemId() {
+  return 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
 function persistTable(table) {
   if (orders[table]) ordersRef.child(table).set(orders[table]);
   else ordersRef.child(table).remove();
+}
+function persistItem(table, itemId, item) {
+  if (item) ordersRef.child(table).child('items').child(itemId).set(item);
+  else ordersRef.child(table).child('items').child(itemId).remove();
+}
+function removeTable(table) {
+  ordersRef.child(table).remove();
+}
+
+// Convierte mesas que todavía tengan el formato viejo (lista de ítems sin ID propio)
+// al formato nuevo (ítems con ID), la primera vez que se tocan. Así cocina y mozo
+// pueden editar la misma mesa a la vez sin pisarse.
+function ensureItemsObject(table) {
+  const t = orders[table];
+  if (!t || !Array.isArray(t.items)) return;
+  const obj = {};
+  t.items.forEach(it => { obj[newItemId()] = it; });
+  t.items = obj;
+  persistTable(table);
 }
 function persistHistoryEntry(id) {
   if (history[id]) historyRef.child(id).set(history[id]);
@@ -283,7 +306,13 @@ function historyList() {
 }
 
 function tableItems(t) {
-  return (orders[t] && orders[t].items) || [];
+  const items = orders[t] && orders[t].items;
+  return items ? Object.values(items) : [];
+}
+function findItemId(table, name) {
+  const items = orders[table] && orders[table].items;
+  if (!items) return null;
+  return Object.keys(items).find(id => items[id].n === name) || null;
 }
 
 function tableTotal(t) {
@@ -297,12 +326,23 @@ function getTipAmount(subtotal) {
 }
 
 function addItem(table, item) {
-  if (!orders[table]) orders[table] = { startedAt: Date.now(), items: [] };
-  const cur = orders[table].items;
-  const idx = cur.findIndex(i => i.n === item.n);
-  if (idx >= 0) { cur[idx].qty += 1; cur[idx].ready = false; }
-  else cur.push({ n: item.n, p: item.p, qty: 1, ready: false, note: '', ...(item.tipo ? { tipo: item.tipo } : {}) });
-  persistTable(table); render();
+  if (!orders[table]) {
+    orders[table] = { startedAt: Date.now(), items: {} };
+    ordersRef.child(table).child('startedAt').set(orders[table].startedAt);
+  }
+  ensureItemsObject(table);
+  const items = orders[table].items;
+  const existingId = Object.keys(items).find(id => items[id].n === item.n);
+  if (existingId) {
+    items[existingId].qty += 1;
+    items[existingId].ready = false;
+    persistItem(table, existingId, items[existingId]);
+  } else {
+    const id = newItemId();
+    items[id] = { n: item.n, p: item.p, qty: 1, ready: false, note: '', ...(item.tipo ? { tipo: item.tipo } : {}) };
+    persistItem(table, id, items[id]);
+  }
+  render();
 }
 
 function promptCustomItem(existing) {
@@ -317,42 +357,56 @@ function promptCustomItem(existing) {
 
 function editCustomItem(table, oldName) {
   if (!orders[table]) return;
-  const item = orders[table].items.find(i => i.n === oldName);
-  if (!item) return;
+  ensureItemsObject(table);
+  const id = findItemId(table, oldName);
+  if (!id) return;
+  const item = orders[table].items[id];
   const edited = promptCustomItem(item);
   if (!edited) return;
   item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
-  persistTable(table); render();
+  persistItem(table, id, item);
+  render();
 }
 
 function removeItem(table, name) {
   if (!orders[table]) return;
-  let cur = orders[table].items;
-  const idx = cur.findIndex(i => i.n === name);
-  if (idx < 0) return;
-  if (cur[idx].qty > 1) cur[idx].qty -= 1;
-  else cur = cur.filter(i => i.n !== name);
-  orders[table].items = cur;
-  if (cur.length === 0) delete orders[table];
-  persistTable(table); render();
+  ensureItemsObject(table);
+  const items = orders[table].items;
+  const id = findItemId(table, name);
+  if (!id) return;
+  if (items[id].qty > 1) {
+    items[id].qty -= 1;
+    persistItem(table, id, items[id]);
+  } else {
+    delete items[id];
+    persistItem(table, id, null);
+  }
+  if (Object.keys(items).length === 0) { delete orders[table]; removeTable(table); }
+  render();
 }
 
 function toggleItemReady(table, name) {
   if (!orders[table]) return;
-  const item = orders[table].items.find(i => i.n === name);
-  if (!item) return;
+  ensureItemsObject(table);
+  const id = findItemId(table, name);
+  if (!id) return;
+  const item = orders[table].items[id];
   item.ready = !item.ready;
-  persistTable(table); render();
+  persistItem(table, id, item);
+  render();
 }
 
 function setItemNote(table, name) {
   if (!orders[table]) return;
-  const item = orders[table].items.find(i => i.n === name);
-  if (!item) return;
+  ensureItemsObject(table);
+  const id = findItemId(table, name);
+  if (!id) return;
+  const item = orders[table].items[id];
   const note = prompt('Nota para "' + name + '" (ej: sin azúcar, para llevar):', item.note || '');
   if (note === null) return;
   item.note = note.trim();
-  persistTable(table); render();
+  persistItem(table, id, item);
+  render();
 }
 
 function closeTable(table) {
@@ -659,9 +713,9 @@ function renderTable() {
 
 function renderKitchen() {
   const pending = TABLES
-    .map(t => ({ t, order: orders[t] }))
-    .filter(x => x.order && x.order.items && x.order.items.length > 0)
-    .map(x => ({ t: x.t, order: x.order, items: x.order.items.filter(i => kitchenFilter === 'todos' || itemTipo(i) === kitchenFilter) }))
+    .map(t => ({ t, order: orders[t], allItems: tableItems(t) }))
+    .filter(x => x.allItems.length > 0)
+    .map(x => ({ t: x.t, order: x.order, items: x.allItems.filter(i => kitchenFilter === 'todos' || itemTipo(i) === kitchenFilter) }))
     .filter(x => x.items.length > 0)
     .sort((a, b) => (a.order.startedAt || 0) - (b.order.startedAt || 0));
   return `
