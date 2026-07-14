@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Clorofila — Mesas y comandas</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2D4A3E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   :root {
     --cream: #F5F0E8;
@@ -11,6 +17,7 @@
     --soft-green: #5C7A67;
     --gold: #A98F5C;
     --line: #C9BFA8;
+    --red: #D4534E;
   }
   * { box-sizing: border-box; }
   body {
@@ -22,17 +29,24 @@
   }
   .wrap { max-width: 480px; margin: 0 auto; }
   h2 { margin: 0; font-size: 20px; }
-  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 8px; }
   button {
     font-family: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #ccc;
     background: white; padding: 8px 12px; font-size: 13px;
   }
   button:active { transform: scale(0.98); }
   .btn-back { padding: 8px 12px; }
+  .nav-btns { display: flex; gap: 6px; }
   .card { background: var(--cream); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
-  .item-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .item-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); gap: 6px; }
   .item-row:last-child { border-bottom: none; }
-  .qty-btn { width: 24px; height: 24px; border-radius: 6px; padding: 0; }
+  .item-main { flex: 1; min-width: 0; }
+  .item-name { font-size: 14px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .item-note { font-size: 11px; color: #888; font-style: italic; }
+  .qty-btn { width: 24px; height: 24px; border-radius: 6px; padding: 0; flex-shrink: 0; }
+  .note-btn { width: 24px; height: 24px; border-radius: 6px; padding: 0; flex-shrink: 0; border: 1px solid var(--gold); color: #7a6538; font-size: 12px; }
+  .ready-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #ddd; color: #666; }
+  .ready-badge.ready { background: var(--soft-green); color: white; }
   .cats { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; padding-bottom: 4px; }
   .cat-btn { white-space: nowrap; padding: 6px 12px; border-radius: 20px; border: none; background: #eee; font-size: 13px; }
   .cat-btn.active { background: var(--green); color: white; }
@@ -43,6 +57,7 @@
   .table-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .table-btn { padding: 16px; border-radius: 12px; border: 1px solid #ddd; background: white; text-align: left; }
   .table-btn.busy { border: 2px solid var(--green); background: #EAF0EC; }
+  .table-btn.all-ready { border: 2px solid var(--gold); background: #FBF3E3; }
   .close-btn {
     width: 100%; padding: 12px; margin-bottom: 16px; border-radius: 8px; border: none;
     background: var(--green); color: white; font-weight: bold; font-size: 15px;
@@ -51,7 +66,7 @@
   .tip-presets { display: flex; gap: 6px; margin-bottom: 8px; }
   .tip-btn { flex: 1; padding: 8px 4px; border-radius: 8px; border: none; background: #eee; font-size: 13px; }
   .tip-btn.active { background: var(--green); color: white; }
-  input[type="number"], input[type="text"] {
+  input[type="number"], input[type="text"], input[type="password"] {
     width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; box-sizing: border-box;
   }
   .summary { background: #EAF0EC; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
@@ -63,10 +78,35 @@
   .ticket { border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
   .ticket-head { display: flex; justify-content: space-between; align-items: center; padding: 12px; cursor: pointer; }
   .ticket-detail { border-top: 1px solid #f0f0f0; padding: 12px; background: #FAFAF7; font-size: 13px; }
-  .danger-btn { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 8px; border: 1px solid #D4534E; background: white; color: #D4534E; font-size: 14px; }
+  .danger-btn { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--red); background: white; color: var(--red); font-size: 14px; }
   .edit-btn { width: 100%; margin-top: 10px; padding: 8px; border-radius: 8px; border: 1px solid var(--green); background: white; color: var(--green); font-size: 13px; }
   .export-btn { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--gold); background: white; color: #7a6538; font-size: 13px; }
   .empty { color: #888; font-size: 14px; }
+  .banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: var(--red); color: white; text-align: center; font-size: 13px; padding: 8px;
+  }
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
+    background: #222; color: white; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+    display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .toast button { background: var(--gold); border: none; color: #2D2210; font-weight: bold; padding: 6px 10px; }
+  .kitchen-table { border: 1px solid #ddd; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+  .kitchen-table-head { background: var(--green); color: white; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+  .kitchen-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-top: 1px solid #eee; }
+  .kitchen-item.is-ready { background: #F3F8F4; }
+  .kitchen-tag { font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-right: 6px; }
+  .kitchen-tag.comida { background: #EAF0EC; color: var(--green); }
+  .kitchen-tag.bebida { background: #F3EADF; color: #7a6538; }
+  .mark-ready-btn { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--soft-green); background: white; color: var(--soft-green); font-size: 12px; }
+  .mark-ready-btn.ready { background: var(--soft-green); color: white; }
+  .lock-wrap { max-width: 300px; margin: 80px auto; text-align: center; }
+  .pin-dots { display: flex; gap: 10px; justify-content: center; margin: 20px 0; }
+  .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--green); }
+  .pin-dot.filled { background: var(--green); }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .keypad button { padding: 18px 0; font-size: 20px; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -75,10 +115,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script>
-// 1. Andá a https://console.firebase.google.com, creá un proyecto (o abrí el existente).
-// 2. En el proyecto: Compilación → Realtime Database → Crear base de datos → modo de prueba.
-// 3. En Configuración del proyecto → tus apps → app web (</>) → copiá el objeto firebaseConfig
-//    y pegalo acá abajo, reemplazando el placeholder.
+// PIN de acceso compartido para mozos/cocina (protección liviana, no es seguridad real:
+// cualquiera con conocimientos técnicos podría saltarla). Cambialo acá si hace falta.
+const APP_PIN = '2026';
+
 const firebaseConfig = {
   apiKey: "AIzaSyDy95oMEzS7MU4vK3I_x7TWjcIbf07sCa8",
   authDomain: "clorofila-comandas.firebaseapp.com",
@@ -92,15 +132,16 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const ordersRef = db.ref('clorofila/orders');
 const historyRef = db.ref('clorofila/history');
+const connectedRef = db.ref('.info/connected');
 
 const MENU = [
-  { cat: 'Cafés', items: [
+  { cat: 'Cafés', tipo: 'bebida', items: [
     { n: 'Espresso simple', p: 100 }, { n: 'Espresso doble', p: 120 },
     { n: 'Lungo simple', p: 130 }, { n: 'Lungo doble', p: 150 },
     { n: 'Americano', p: 150 }, { n: 'Cortado', p: 160 },
     { n: 'Flat White', p: 180 }, { n: 'Latte', p: 200 }, { n: 'Cappuccino', p: 200 },
   ]},
-  { cat: 'Bebidas', items: [
+  { cat: 'Bebidas', tipo: 'bebida', items: [
     { n: 'Té o infusión', p: 180 }, { n: 'Chocolate caliente', p: 200 }, { n: 'Golden Chai', p: 200 },
     { n: 'Té helado', p: 200 }, { n: 'Golden chai helado', p: 200 },
     { n: 'Jugo de naranja', p: 140 }, { n: 'Limonada', p: 140 },
@@ -108,18 +149,18 @@ const MENU = [
     { n: 'Copa de vino Santero', p: 180 }, { n: 'Copa de frizzante', p: 180 },
     { n: 'Vermouth Rooster', p: 220 }, { n: 'Cerveza Mala Fama', p: 220 },
   ]},
-  { cat: 'Bollería', items: [
+  { cat: 'Bollería', tipo: 'comida', items: [
     { n: 'Croissant', p: 120 }, { n: 'Roll de canela', p: 140 },
     { n: 'Pain au Chocolat', p: 140 }, { n: 'Croissant relleno', p: 260 },
   ]},
-  { cat: 'Dulces', items: [
+  { cat: 'Dulces', tipo: 'comida', items: [
     { n: 'Alfajor dulce de cajú', p: 130 }, { n: 'Carrot', p: 220 },
     { n: 'Delicia de limón', p: 260 },
   ]},
-  { cat: 'Salados', items: [
+  { cat: 'Salados', tipo: 'comida', items: [
     { n: 'Scón', p: 80 }, { n: 'Chipá', p: 120 },
   ]},
-  { cat: 'Sanguches', items: [
+  { cat: 'Sanguches', tipo: 'comida', items: [
     { n: 'Sanguche caliente caprese', p: 250 },
     { n: 'Tostón de palta y champi', p: 340 },
     { n: 'Sanguche de tempeh', p: 380 },
@@ -127,6 +168,11 @@ const MENU = [
     { n: 'Hamburguesa de Lions Mane', p: 520 },
   ]},
 ];
+function itemTipo(name) {
+  for (const c of MENU) if (c.items.some(i => i.n === name)) return c.tipo;
+  return 'comida';
+}
+
 const TABLES = Array.from({ length: 8 }, (_, i) => i + 1);
 const TIP_PRESETS = [0, 10, 15, 20];
 
@@ -140,6 +186,11 @@ let editingTicket = null;
 let tipMode = null;
 let tipCustom = '';
 let ready = { orders: false, history: false };
+let connected = null;
+let authed = localStorage.getItem('clorofila_authed') === '1';
+let pinInput = '';
+let lastClosed = null;
+let toastTimer = null;
 
 function persist() {
   ordersRef.set(orders);
@@ -156,14 +207,21 @@ historyRef.on('value', snapshot => {
   ready.history = true;
   if (ready.orders) render();
 });
+connectedRef.on('value', snapshot => {
+  connected = snapshot.val();
+  render();
+});
 
 function fmt(n) {
   return Math.round(n).toLocaleString('es-UY');
 }
 
+function tableItems(t) {
+  return (orders[t] && orders[t].items) || [];
+}
+
 function tableTotal(t) {
-  const cur = orders[t] || [];
-  return cur.reduce((s, i) => s + i.p * i.qty, 0);
+  return tableItems(t).reduce((s, i) => s + i.p * i.qty, 0);
 }
 
 function getTipAmount(subtotal) {
@@ -173,33 +231,68 @@ function getTipAmount(subtotal) {
 }
 
 function addItem(table, item) {
-  const cur = orders[table] || [];
+  if (!orders[table]) orders[table] = { startedAt: Date.now(), items: [] };
+  const cur = orders[table].items;
   const idx = cur.findIndex(i => i.n === item.n);
-  if (idx >= 0) cur[idx].qty += 1;
-  else cur.push({ n: item.n, p: item.p, qty: 1 });
-  orders[table] = cur;
+  if (idx >= 0) { cur[idx].qty += 1; cur[idx].ready = false; }
+  else cur.push({ n: item.n, p: item.p, qty: 1, ready: false, note: '' });
   persist(); render();
 }
 
 function removeItem(table, name) {
-  let cur = orders[table] || [];
+  if (!orders[table]) return;
+  let cur = orders[table].items;
   const idx = cur.findIndex(i => i.n === name);
   if (idx < 0) return;
   if (cur[idx].qty > 1) cur[idx].qty -= 1;
   else cur = cur.filter(i => i.n !== name);
-  orders[table] = cur;
+  orders[table].items = cur;
+  if (cur.length === 0) delete orders[table];
+  persist(); render();
+}
+
+function toggleItemReady(table, name) {
+  if (!orders[table]) return;
+  const item = orders[table].items.find(i => i.n === name);
+  if (!item) return;
+  item.ready = !item.ready;
+  persist(); render();
+}
+
+function setItemNote(table, name) {
+  if (!orders[table]) return;
+  const item = orders[table].items.find(i => i.n === name);
+  if (!item) return;
+  const note = prompt('Nota para "' + name + '" (ej: sin azúcar, para llevar):', item.note || '');
+  if (note === null) return;
+  item.note = note.trim();
   persist(); render();
 }
 
 function closeTable(table) {
-  const cur = orders[table] || [];
-  if (cur.length === 0) return;
+  const items = tableItems(table);
+  if (items.length === 0) return;
   const subtotal = tableTotal(table);
   const tip = getTipAmount(subtotal);
-  history.unshift({ id: Date.now(), table, items: cur, subtotal, tip, total: subtotal + tip, closedAt: new Date().toISOString() });
+  const entry = { id: Date.now(), table, items, subtotal, tip, total: subtotal + tip, closedAt: new Date().toISOString() };
+  history.unshift(entry);
+  const savedOrder = orders[table];
   delete orders[table];
   persist();
+  lastClosed = { entryId: entry.id, table, order: savedOrder };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { lastClosed = null; render(); }, 5000);
   view = 'home'; activeTable = null; tipMode = null; tipCustom = '';
+  render();
+}
+
+function undoCloseTable() {
+  if (!lastClosed) return;
+  history = history.filter(h => h.id !== lastClosed.entryId);
+  orders[lastClosed.table] = lastClosed.order;
+  persist();
+  clearTimeout(toastTimer);
+  lastClosed = null;
   render();
 }
 
@@ -223,7 +316,7 @@ function addItemToTicket(id, item) {
   if (!h) return;
   const idx = h.items.findIndex(i => i.n === item.n);
   if (idx >= 0) h.items[idx].qty += 1;
-  else h.items.push({ n: item.n, p: item.p, qty: 1 });
+  else h.items.push({ n: item.n, p: item.p, qty: 1, ready: true, note: '' });
   h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
   h.total = h.subtotal + (h.tip || 0);
   persist(); render();
@@ -250,7 +343,7 @@ function exportCSV() {
     });
   });
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -282,17 +375,64 @@ window.pickItemForTicket = function(name, price) { addItemToTicket(editingTicket
 
 window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; render(); };
 window.goHistory = function() { view = 'history'; render(); };
+window.goKitchen = function() { view = 'kitchen'; render(); };
 window.openTable = function(t) { view = 'table'; activeTable = t; tipMode = null; tipCustom = ''; render(); };
 window.setTipMode = function(m) { tipMode = m; tipCustom = ''; render(); };
 window.setTipCustom = function(v) { tipCustom = v; tipMode = 'custom'; render(); };
 window.doCloseTable = function() { closeTable(activeTable); };
 window.doRemoveItem = function(name) { removeItem(activeTable, name); };
+window.doToggleReady = function(table, name) { toggleItemReady(table, name); };
+window.doSetNote = function(table, name) { setItemNote(table, name); };
 window.toggleTicket = function(id) { expandedTicket = expandedTicket === id ? null : id; render(); };
 window.startEditTicket = function(id) { editingTicket = id; view = 'edit'; render(); };
 window.doDeleteTicket = function(id) { if (confirm('¿Eliminar esta venta del historial?')) deleteTicket(id); };
 window.doUpdateTicketQty = function(id, name, delta) { updateTicketQty(id, name, delta); };
 window.doUpdateTicketTip = function(id, val) { updateTicketTip(id, Number(val)); };
 window.doExportCSV = function() { exportCSV(); };
+window.doUndoClose = function() { undoCloseTable(); };
+window.pinPress = function(d) {
+  if (pinInput.length >= 4) return;
+  pinInput += d;
+  if (pinInput.length === 4) {
+    if (pinInput === APP_PIN) {
+      authed = true;
+      localStorage.setItem('clorofila_authed', '1');
+      pinInput = '';
+    } else {
+      setTimeout(() => { pinInput = ''; render(); }, 300);
+    }
+  }
+  render();
+};
+window.pinBackspace = function() { pinInput = pinInput.slice(0, -1); render(); };
+
+function renderLock() {
+  return `
+    <div class="lock-wrap">
+      <h2>Clorofila</h2>
+      <p style="color:#888;font-size:13px;">Ingresá el PIN del local</p>
+      <div class="pin-dots">
+        ${[0,1,2,3].map(i => `<div class="pin-dot ${i < pinInput.length ? 'filled' : ''}"></div>`).join('')}
+      </div>
+      <div class="keypad">
+        ${[1,2,3,4,5,6,7,8,9].map(n => `<button onclick="pinPress('${n}')">${n}</button>`).join('')}
+        <div></div>
+        <button onclick="pinPress('0')">0</button>
+        <button onclick="pinBackspace()">⌫</button>
+      </div>
+    </div>
+  `;
+}
+
+function connectionBanner() {
+  if (connected === false) return `<div class="banner">Sin conexión — los cambios no se están guardando</div>`;
+  return '';
+}
+
+function undoToast() {
+  if (!lastClosed) return '';
+  return `<div class="toast">Mesa ${lastClosed.table} cerrada <button onclick="doUndoClose()">Deshacer</button></div>`;
+}
 
 function renderHome() {
   const th = todayHistory();
@@ -300,7 +440,10 @@ function renderHome() {
   return `
     <div class="row">
       <h2>Clorofila — Mesas</h2>
-      <button onclick="goHistory()">Ver caja</button>
+      <div class="nav-btns">
+        <button onclick="goKitchen()">Cocina</button>
+        <button onclick="goHistory()">Ver caja</button>
+      </div>
     </div>
     <div class="card" style="text-align:center;">
       <div style="font-size:12px;color:#666;">Cobrado hoy (con propinas)</div>
@@ -308,13 +451,14 @@ function renderHome() {
     </div>
     <div class="table-grid">
       ${TABLES.map(t => {
-        const cur = orders[t] || [];
-        const busy = cur.length > 0;
+        const items = tableItems(t);
+        const busy = items.length > 0;
         const tot = tableTotal(t);
-        return `<button class="table-btn ${busy ? 'busy' : ''}" onclick="openTable(${t})">
+        const allReady = busy && items.every(i => i.ready);
+        return `<button class="table-btn ${busy ? 'busy' : ''} ${allReady ? 'all-ready' : ''}" onclick="openTable(${t})">
           <div style="font-size:16px;font-weight:bold;margin-bottom:4px;">Mesa ${t}</div>
           ${busy
-            ? `<div style="font-size:12px;color:#666;">${cur.reduce((s,i)=>s+i.qty,0)} ítems</div>
+            ? `<div style="font-size:12px;color:#666;">${items.reduce((s,i)=>s+i.qty,0)} ítems ${allReady ? '· todo listo' : ''}</div>
                <div style="font-size:14px;color:var(--green);font-weight:bold;">$${fmt(tot)}</div>`
             : `<div style="font-size:12px;color:#aaa;">Libre</div>`}
         </button>`;
@@ -324,7 +468,7 @@ function renderHome() {
 }
 
 function renderTable() {
-  const cur = orders[activeTable] || [];
+  const cur = tableItems(activeTable);
   const subtotal = tableTotal(activeTable);
   const tip = getTipAmount(subtotal);
   return `
@@ -336,12 +480,19 @@ function renderTable() {
     <div class="card">
       ${cur.length === 0 ? '<p class="empty">Sin pedidos todavía</p>' : cur.map(i => `
         <div class="item-row">
-          <span style="font-size:14px;flex:1;">${i.n}</span>
-          <div style="display:flex;align-items:center;gap:8px;">
+          <div class="item-main">
+            <div class="item-name">
+              ${i.n}
+              <span class="ready-badge ${i.ready ? 'ready' : ''}">${i.ready ? 'Listo' : 'Preparando'}</span>
+            </div>
+            ${i.note ? `<div class="item-note">📝 ${i.note}</div>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button class="note-btn" onclick="doSetNote(${activeTable}, '${i.n.replace(/'/g,"\\'")}')">📝</button>
             <button class="qty-btn" onclick="doRemoveItem('${i.n.replace(/'/g,"\\'")}')">−</button>
             <span style="min-width:18px;text-align:center;font-size:14px;">${i.qty}</span>
             <button class="qty-btn" onclick="pickItemForTable('${i.n.replace(/'/g,"\\'")}', ${i.p})">+</button>
-            <span style="font-size:14px;min-width:60px;text-align:right;">$${fmt(i.p*i.qty)}</span>
+            <span style="font-size:14px;min-width:56px;text-align:right;">$${fmt(i.p*i.qty)}</span>
           </div>
         </div>
       `).join('')}
@@ -366,6 +517,38 @@ function renderTable() {
     <button class="close-btn" ${cur.length === 0 ? 'disabled' : ''} onclick="doCloseTable()">Cerrar mesa y cobrar ($${fmt(subtotal+tip)})</button>
     ${categoryTabs(activeCat, 'setActiveCatTicket')}
     ${menuGrid(activeCat, 'pickItemForTable')}
+  `;
+}
+
+function renderKitchen() {
+  const pending = TABLES
+    .map(t => ({ t, order: orders[t] }))
+    .filter(x => x.order && x.order.items && x.order.items.length > 0)
+    .sort((a, b) => (a.order.startedAt || 0) - (b.order.startedAt || 0));
+  return `
+    <div class="row">
+      <button class="btn-back" onclick="goHome()">← Mesas</button>
+      <h2>Cocina</h2>
+      <div style="width:70px;"></div>
+    </div>
+    ${pending.length === 0 ? '<p class="empty">No hay mesas con pedidos pendientes.</p>' : pending.map(({t, order}) => `
+      <div class="kitchen-table">
+        <div class="kitchen-table-head">
+          <span>Mesa ${t}</span>
+          <span style="font-weight:normal;font-size:12px;">${new Date(order.startedAt).toLocaleTimeString('es-UY', {hour:'2-digit',minute:'2-digit'})}</span>
+        </div>
+        ${order.items.map(i => `
+          <div class="kitchen-item ${i.ready ? 'is-ready' : ''}">
+            <div>
+              <span class="kitchen-tag ${itemTipo(i.n)}">${itemTipo(i.n) === 'bebida' ? 'Bebida' : 'Comida'}</span>
+              <span style="font-size:14px;">${i.n} × ${i.qty}</span>
+              ${i.note ? `<div class="item-note">📝 ${i.note}</div>` : ''}
+            </div>
+            <button class="mark-ready-btn ${i.ready ? 'ready' : ''}" onclick="doToggleReady(${t}, '${i.n.replace(/'/g,"\\'")}')">${i.ready ? '✓ Listo' : 'Marcar listo'}</button>
+          </div>
+        `).join('')}
+      </div>
+    `).join('')}
   `;
 }
 
@@ -482,13 +665,18 @@ function renderHistory() {
 
 function render() {
   const app = document.getElementById('app');
-  if (view === 'home') app.innerHTML = renderHome();
-  else if (view === 'table') app.innerHTML = renderTable();
-  else if (view === 'edit') app.innerHTML = renderEdit();
-  else if (view === 'history') app.innerHTML = renderHistory();
+  if (!authed) { app.innerHTML = renderLock(); return; }
+  let body;
+  if (view === 'home') body = renderHome();
+  else if (view === 'table') body = renderTable();
+  else if (view === 'kitchen') body = renderKitchen();
+  else if (view === 'edit') body = renderEdit();
+  else if (view === 'history') body = renderHistory();
+  app.innerHTML = connectionBanner() + body + undoToast();
 }
 
-document.getElementById('app').innerHTML = '<p class="empty">Conectando...</p>';
+if (!authed) render();
+else document.getElementById('app').innerHTML = '<p class="empty">Conectando...</p>';
 </script>
 </body>
 </html>
