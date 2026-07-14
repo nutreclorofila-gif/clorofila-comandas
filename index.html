@@ -132,6 +132,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const ordersRef = db.ref('clorofila/orders');
 const historyRef = db.ref('clorofila/history');
+const archiveRef = db.ref('clorofila/archive');
 const connectedRef = db.ref('.info/connected');
 
 const MENU = [
@@ -432,6 +433,24 @@ function todayHistory() {
   return historyList().filter(h => new Date(h.closedAt).toDateString() === today);
 }
 
+function closeDay() {
+  const th = todayHistory();
+  if (th.length === 0) { alert('No hay ventas registradas hoy.'); return; }
+  const subtotal = th.reduce((s, h) => s + h.subtotal, 0);
+  const tips = th.reduce((s, h) => s + (h.tip || 0), 0);
+  const total = subtotal + tips;
+  const ok = confirm(
+    `¿Cerrar el día?\n\nMesas: ${th.length}\nVentas: $${fmt(subtotal)}\nPropinas: $${fmt(tips)}\nTotal: $${fmt(total)}\n\n` +
+    `Se guarda un registro fijo de hoy y la caja arranca en $0 para mañana. Esto no se puede deshacer.`
+  );
+  if (!ok) return;
+  const dateKey = new Date().toISOString().slice(0, 10);
+  archiveRef.child(dateKey).set({ date: dateKey, closedAt: new Date().toISOString(), subtotal, tips, total, count: th.length, entries: th });
+  th.forEach(h => { delete history[h.id]; historyRef.child(h.id).remove(); });
+  render();
+  alert('Día cerrado. Guardado en el archivo — la caja ya está en $0.');
+}
+
 function exportCSV() {
   const rows = [['Mesa', 'Fecha/hora', 'Item', 'Cantidad', 'Precio unitario', 'Subtotal item', 'Propina mesa', 'Total mesa']];
   historyList().forEach(h => {
@@ -497,6 +516,7 @@ window.doDeleteTicket = function(id) { if (confirm('¿Eliminar esta venta del hi
 window.doUpdateTicketQty = function(id, name, delta) { updateTicketQty(id, name, delta); };
 window.doUpdateTicketTip = function(id, val) { updateTicketTip(id, Number(val)); };
 window.doExportCSV = function() { exportCSV(); };
+window.doCloseDay = function() { closeDay(); };
 window.doUndoClose = function() { undoCloseTable(); };
 window.pinPress = function(d) {
   ensureAudio();
@@ -742,6 +762,7 @@ function renderHistory() {
       </div>
     </div>
     <button class="export-btn" onclick="doExportCSV()">Descargar historial completo (CSV)</button>
+    <button class="danger-btn" onclick="doCloseDay()">Cerrar el día (reinicia la caja a $0)</button>
     ${salesList.length > 0 ? `
       <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">Qué se vendió hoy</div>
       <div style="border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:20px;">
@@ -753,8 +774,8 @@ function renderHistory() {
         `).join('')}
       </div>
     ` : ''}
-    <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">Mesas cerradas</div>
-    ${historyList().length === 0 ? '<p class="empty">Todavía no se cerró ninguna mesa.</p>' : historyList().map(h => `
+    <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">Mesas cerradas hoy</div>
+    ${th.length === 0 ? '<p class="empty">Todavía no se cerró ninguna mesa.</p>' : th.map(h => `
       <div class="ticket">
         <div class="ticket-head" onclick="toggleTicket(${h.id})">
           <div>
