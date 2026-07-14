@@ -168,7 +168,12 @@ const MENU = [
     { n: 'Hamburguesa de Lions Mane', p: 520 },
   ]},
 ];
-function itemTipo(name) {
+function isCustomItem(name) {
+  return !MENU.some(c => c.items.some(i => i.n === name));
+}
+function itemTipo(item) {
+  if (item && item.tipo) return item.tipo;
+  const name = item && item.n;
   for (const c of MENU) if (c.items.some(i => i.n === name)) return c.tipo;
   return 'comida';
 }
@@ -247,7 +252,27 @@ function addItem(table, item) {
   const cur = orders[table].items;
   const idx = cur.findIndex(i => i.n === item.n);
   if (idx >= 0) { cur[idx].qty += 1; cur[idx].ready = false; }
-  else cur.push({ n: item.n, p: item.p, qty: 1, ready: false, note: '' });
+  else cur.push({ n: item.n, p: item.p, qty: 1, ready: false, note: '', ...(item.tipo ? { tipo: item.tipo } : {}) });
+  persistTable(table); render();
+}
+
+function promptCustomItem(existing) {
+  const name = prompt('Nombre del producto:', existing ? existing.n : '');
+  if (name === null || !name.trim()) return null;
+  const priceStr = prompt('Precio ($):', existing ? String(existing.p) : '');
+  const price = Math.round(Number(priceStr));
+  if (!price || price <= 0) { alert('Precio inválido, no se guardó.'); return null; }
+  const wantBebida = confirm('¿Es una bebida?\n(Aceptar = Bebida, Cancelar = Comida)');
+  return { n: name.trim(), p: price, tipo: wantBebida ? 'bebida' : 'comida' };
+}
+
+function editCustomItem(table, oldName) {
+  if (!orders[table]) return;
+  const item = orders[table].items.find(i => i.n === oldName);
+  if (!item) return;
+  const edited = promptCustomItem(item);
+  if (!edited) return;
+  item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
   persistTable(table); render();
 }
 
@@ -331,7 +356,20 @@ function addItemToTicket(id, item) {
   if (!h) return;
   const idx = h.items.findIndex(i => i.n === item.n);
   if (idx >= 0) h.items[idx].qty += 1;
-  else h.items.push({ n: item.n, p: item.p, qty: 1, ready: true, note: '' });
+  else h.items.push({ n: item.n, p: item.p, qty: 1, ready: true, note: '', ...(item.tipo ? { tipo: item.tipo } : {}) });
+  h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
+  h.total = h.subtotal + (h.tip || 0);
+  persistHistoryEntry(id); render();
+}
+
+function editCustomItemInTicket(id, oldName) {
+  const h = history[id];
+  if (!h) return;
+  const item = h.items.find(i => i.n === oldName);
+  if (!item) return;
+  const edited = promptCustomItem(item);
+  if (!edited) return;
+  item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
   h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
   h.total = h.subtotal + (h.tip || 0);
   persistHistoryEntry(id); render();
@@ -387,6 +425,16 @@ window.setActiveCatHome = function(cat) { activeCat = cat; render(); };
 window.setActiveCatTicket = function(cat) { activeCat = cat; render(); };
 window.pickItemForTable = function(name, price) { addItem(activeTable, { n: name, p: price }); };
 window.pickItemForTicket = function(name, price) { addItemToTicket(editingTicket, { n: name, p: price }); };
+window.doAddCustomItem = function() {
+  const item = promptCustomItem();
+  if (item) addItem(activeTable, item);
+};
+window.doEditCustomItem = function(table, name) { editCustomItem(table, name); };
+window.doAddCustomItemToTicket = function() {
+  const item = promptCustomItem();
+  if (item) addItemToTicket(editingTicket, item);
+};
+window.doEditCustomItemInTicket = function(id, name) { editCustomItemInTicket(id, name); };
 
 window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; render(); };
 window.goHistory = function() { view = 'history'; render(); };
@@ -497,12 +545,13 @@ function renderTable() {
         <div class="item-row">
           <div class="item-main">
             <div class="item-name">
-              ${i.n}
+              ${esc(i.n)}
               <span class="ready-badge ${i.ready ? 'ready' : ''}">${i.ready ? 'Listo' : 'Preparando'}</span>
             </div>
             ${i.note ? `<div class="item-note">📝 ${esc(i.note)}</div>` : ''}
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
+            ${isCustomItem(i.n) ? `<button class="note-btn" onclick="doEditCustomItem(${activeTable}, '${i.n.replace(/'/g,"\\'")}')">✎</button>` : ''}
             <button class="note-btn" onclick="doSetNote(${activeTable}, '${i.n.replace(/'/g,"\\'")}')">📝</button>
             <button class="qty-btn" onclick="doRemoveItem('${i.n.replace(/'/g,"\\'")}')">−</button>
             <span style="min-width:18px;text-align:center;font-size:14px;">${i.qty}</span>
@@ -532,6 +581,7 @@ function renderTable() {
     <button class="close-btn" ${cur.length === 0 ? 'disabled' : ''} onclick="doCloseTable()">Cerrar mesa y cobrar ($${fmt(subtotal+tip)})</button>
     ${categoryTabs(activeCat, 'setActiveCatTicket')}
     ${menuGrid(activeCat, 'pickItemForTable')}
+    <button class="export-btn" style="margin-top:8px;" onclick="doAddCustomItem()">+ Otro (producto fuera del menú)</button>
   `;
 }
 
@@ -555,8 +605,8 @@ function renderKitchen() {
         ${order.items.map(i => `
           <div class="kitchen-item ${i.ready ? 'is-ready' : ''}">
             <div>
-              <span class="kitchen-tag ${itemTipo(i.n)}">${itemTipo(i.n) === 'bebida' ? 'Bebida' : 'Comida'}</span>
-              <span style="font-size:14px;">${i.n} × ${i.qty}</span>
+              <span class="kitchen-tag ${itemTipo(i)}">${itemTipo(i) === 'bebida' ? 'Bebida' : 'Comida'}</span>
+              <span style="font-size:14px;">${esc(i.n)} × ${i.qty}</span>
               ${i.note ? `<div class="item-note">📝 ${esc(i.note)}</div>` : ''}
             </div>
             <button class="mark-ready-btn ${i.ready ? 'ready' : ''}" onclick="doToggleReady(${t}, '${i.n.replace(/'/g,"\\'")}')">${i.ready ? '✓ Listo' : 'Marcar listo'}</button>
@@ -580,8 +630,9 @@ function renderEdit() {
     <div class="card">
       ${h.items.length === 0 ? '<p class="empty">Sin ítems</p>' : h.items.map(i => `
         <div class="item-row">
-          <span style="font-size:14px;flex:1;">${i.n}</span>
+          <span style="font-size:14px;flex:1;">${esc(i.n)}</span>
           <div style="display:flex;align-items:center;gap:8px;">
+            ${isCustomItem(i.n) ? `<button class="note-btn" onclick="doEditCustomItemInTicket(${h.id}, '${i.n.replace(/'/g,"\\'")}')">✎</button>` : ''}
             <button class="qty-btn" onclick="doUpdateTicketQty(${h.id}, '${i.n.replace(/'/g,"\\'")}', -1)">−</button>
             <span style="min-width:18px;text-align:center;font-size:14px;">${i.qty}</span>
             <button class="qty-btn" onclick="doUpdateTicketQty(${h.id}, '${i.n.replace(/'/g,"\\'")}', 1)">+</button>
@@ -602,6 +653,7 @@ function renderEdit() {
     <div style="font-size:13px;color:#666;margin-bottom:8px;">Agregar un ítem</div>
     ${categoryTabs(activeCat, 'setActiveCatTicket')}
     ${menuGrid(activeCat, 'pickItemForTicket')}
+    <button class="export-btn" style="margin-top:8px;" onclick="doAddCustomItemToTicket()">+ Otro (producto fuera del menú)</button>
   `;
 }
 
@@ -640,7 +692,7 @@ function renderHistory() {
       <div style="border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:20px;">
         ${salesList.map(([name, d], idx) => `
           <div style="display:flex;justify-content:space-between;padding:8px 12px;${idx > 0 ? 'border-top:1px solid #f0f0f0;' : ''}font-size:13px;">
-            <span>${name} <span style="color:#999;">× ${d.qty}</span></span>
+            <span>${esc(name)} <span style="color:#999;">× ${d.qty}</span></span>
             <span style="font-weight:bold;">$${fmt(d.total)}</span>
           </div>
         `).join('')}
@@ -662,7 +714,7 @@ function renderHistory() {
         ${expandedTicket === h.id ? `
           <div class="ticket-detail">
             ${h.items.map(i => `<div style="display:flex;justify-content:space-between;padding:3px 0;">
-              <span>${i.n} × ${i.qty}</span><span>$${fmt(i.p*i.qty)}</span>
+              <span>${esc(i.n)} × ${i.qty}</span><span>$${fmt(i.p*i.qty)}</span>
             </div>`).join('')}
             <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid #eee;margin-top:6px;color:#666;">
               <span>Subtotal</span><span>$${fmt(h.subtotal)}</span>
