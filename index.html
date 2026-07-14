@@ -231,6 +231,10 @@ function fmt(n) {
   return Math.round(n).toLocaleString('es-UY');
 }
 
+function pl(n, singular, plural) {
+  return n === 1 ? singular : plural;
+}
+
 function elapsedLabel(startedAt) {
   if (!startedAt) return '';
   const mins = Math.max(0, Math.round((Date.now() - startedAt) / 60000));
@@ -753,7 +757,7 @@ function renderHistory() {
     </div>
     <div class="card">
       <div style="text-align:center;margin-bottom:10px;">
-        <div style="font-size:13px;color:#666;">Total cobrado hoy (${th.length} mesas)</div>
+        <div style="font-size:13px;color:#666;">Total cobrado hoy (${th.length} ${pl(th.length,'mesa','mesas')})</div>
         <div style="font-size:28px;font-weight:bold;color:var(--green);">$${fmt(total)}</div>
       </div>
       <div style="display:flex;justify-content:space-around;border-top:1px solid var(--line);padding-top:10px;">
