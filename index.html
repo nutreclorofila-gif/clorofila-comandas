@@ -218,14 +218,19 @@ function removeTable(table) {
 
 // Convierte mesas que todavía tengan el formato viejo (lista de ítems sin ID propio)
 // al formato nuevo (ítems con ID), la primera vez que se tocan. Así cocina y mozo
-// pueden editar la misma mesa a la vez sin pisarse.
+// pueden editar la misma mesa a la vez sin pisarse. También repara mesas que hayan
+// quedado sin campo "items" (puede pasar si el snapshot de Firebase llega justo
+// entre la escritura de startedAt y la del primer ítem).
 function ensureItemsObject(table) {
   const t = orders[table];
-  if (!t || !Array.isArray(t.items)) return;
-  const obj = {};
-  t.items.forEach(it => { obj[newItemId()] = it; });
-  t.items = obj;
-  persistTable(table);
+  if (!t) return;
+  if (!t.items) { t.items = {}; return; }
+  if (Array.isArray(t.items)) {
+    const obj = {};
+    t.items.forEach(it => { obj[newItemId()] = it; });
+    t.items = obj;
+    persistTable(table);
+  }
 }
 function persistHistoryEntry(id) {
   if (history[id]) historyRef.child(id).set(history[id]);
@@ -327,8 +332,15 @@ function getTipAmount(subtotal) {
 
 function addItem(table, item) {
   if (!orders[table]) {
-    orders[table] = { startedAt: Date.now(), items: {} };
-    ordersRef.child(table).child('startedAt').set(orders[table].startedAt);
+    // Mesa nueva: un solo escritura atómica (startedAt + primer ítem juntos) para
+    // que nunca pueda quedar guardado "a medias" si justo en ese instante llega
+    // una actualización de otro dispositivo.
+    const id = newItemId();
+    const newItem = { n: item.n, p: item.p, qty: 1, ready: false, note: '', ...(item.tipo ? { tipo: item.tipo } : {}) };
+    orders[table] = { startedAt: Date.now(), items: { [id]: newItem } };
+    ordersRef.child(table).set(orders[table]);
+    render();
+    return;
   }
   ensureItemsObject(table);
   const items = orders[table].items;
