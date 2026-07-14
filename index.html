@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clorofila — Mesas y comandas</title>
+<style>
+  :root {
+    --cream: #F5F0E8;
+    --green: #2D4A3E;
+    --soft-green: #5C7A67;
+    --gold: #A98F5C;
+    --line: #C9BFA8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    background: #fafaf7;
+    margin: 0;
+    padding: 16px;
+    color: #222;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h2 { margin: 0; font-size: 20px; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  button {
+    font-family: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #ccc;
+    background: white; padding: 8px 12px; font-size: 13px;
+  }
+  button:active { transform: scale(0.98); }
+  .btn-back { padding: 8px 12px; }
+  .card { background: var(--cream); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .item-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .item-row:last-child { border-bottom: none; }
+  .qty-btn { width: 24px; height: 24px; border-radius: 6px; padding: 0; }
+  .cats { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; padding-bottom: 4px; }
+  .cat-btn { white-space: nowrap; padding: 6px 12px; border-radius: 20px; border: none; background: #eee; font-size: 13px; }
+  .cat-btn.active { background: var(--green); color: white; }
+  .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .menu-item { text-align: left; padding: 10px; border-radius: 10px; border: 1px solid #ddd; background: white; }
+  .menu-item .name { font-size: 13px; margin-bottom: 4px; }
+  .menu-item .price { font-size: 13px; color: var(--green); font-weight: bold; }
+  .table-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .table-btn { padding: 16px; border-radius: 12px; border: 1px solid #ddd; background: white; text-align: left; }
+  .table-btn.busy { border: 2px solid var(--green); background: #EAF0EC; }
+  .close-btn {
+    width: 100%; padding: 12px; margin-bottom: 16px; border-radius: 8px; border: none;
+    background: var(--green); color: white; font-weight: bold; font-size: 15px;
+  }
+  .close-btn:disabled { background: #ccc; }
+  .tip-presets { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tip-btn { flex: 1; padding: 8px 4px; border-radius: 8px; border: none; background: #eee; font-size: 13px; }
+  .tip-btn.active { background: var(--green); color: white; }
+  input[type="number"], input[type="text"] {
+    width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; box-sizing: border-box;
+  }
+  .summary { background: #EAF0EC; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+  .summary-row { display: flex; justify-content: space-between; font-size: 13px; color: #555; }
+  .summary-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; margin-top: 4px; }
+  .stat-box { text-align: center; }
+  .stat-label { font-size: 11px; color: #888; }
+  .stat-value { font-size: 15px; font-weight: bold; }
+  .ticket { border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .ticket-head { display: flex; justify-content: space-between; align-items: center; padding: 12px; cursor: pointer; }
+  .ticket-detail { border-top: 1px solid #f0f0f0; padding: 12px; background: #FAFAF7; font-size: 13px; }
+  .danger-btn { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 8px; border: 1px solid #D4534E; background: white; color: #D4534E; font-size: 14px; }
+  .edit-btn { width: 100%; margin-top: 10px; padding: 8px; border-radius: 8px; border: 1px solid var(--green); background: white; color: var(--green); font-size: 13px; }
+  .export-btn { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--gold); background: white; color: #7a6538; font-size: 13px; }
+  .empty { color: #888; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script>
+// 1. Andá a https://console.firebase.google.com, creá un proyecto (o abrí el existente).
+// 2. En el proyecto: Compilación → Realtime Database → Crear base de datos → modo de prueba.
+// 3. En Configuración del proyecto → tus apps → app web (</>) → copiá el objeto firebaseConfig
+//    y pegalo acá abajo, reemplazando el placeholder.
+const firebaseConfig = {
+  apiKey: "AIzaSyDy95oMEzS7MU4vK3I_x7TWjcIbf07sCa8",
+  authDomain: "clorofila-comandas.firebaseapp.com",
+  databaseURL: "https://clorofila-comandas-default-rtdb.firebaseio.com",
+  projectId: "clorofila-comandas",
+  storageBucket: "clorofila-comandas.firebasestorage.app",
+  messagingSenderId: "548683787344",
+  appId: "1:548683787344:web:79d2de0790f9e3af0e3555"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const ordersRef = db.ref('clorofila/orders');
+const historyRef = db.ref('clorofila/history');
+
+const MENU = [
+  { cat: 'Cafés', items: [
+    { n: 'Espresso simple', p: 100 }, { n: 'Espresso doble', p: 120 },
+    { n: 'Lungo simple', p: 130 }, { n: 'Lungo doble', p: 150 },
+    { n: 'Americano', p: 150 }, { n: 'Cortado', p: 160 },
+    { n: 'Flat White', p: 180 }, { n: 'Latte', p: 200 }, { n: 'Cappuccino', p: 200 },
+  ]},
+  { cat: 'Bebidas', items: [
+    { n: 'Té o infusión', p: 180 }, { n: 'Chocolate caliente', p: 200 }, { n: 'Golden Chai', p: 200 },
+    { n: 'Té helado', p: 200 }, { n: 'Golden chai helado', p: 200 },
+    { n: 'Jugo de naranja', p: 140 }, { n: 'Limonada', p: 140 },
+    { n: 'Jugo prensado en frío', p: 220 }, { n: 'Kombucha', p: 200 },
+    { n: 'Copa de vino Santero', p: 180 }, { n: 'Copa de frizzante', p: 180 },
+    { n: 'Vermouth Rooster', p: 220 }, { n: 'Cerveza Mala Fama', p: 220 },
+  ]},
+  { cat: 'Bollería', items: [
+    { n: 'Croissant', p: 120 }, { n: 'Roll de canela', p: 140 },
+    { n: 'Pain au Chocolat', p: 140 }, { n: 'Croissant relleno', p: 260 },
+  ]},
+  { cat: 'Dulces', items: [
+    { n: 'Alfajor dulce de cajú', p: 130 }, { n: 'Carrot', p: 220 },
+    { n: 'Delicia de limón', p: 260 },
+  ]},
+  { cat: 'Salados', items: [
+    { n: 'Scón', p: 80 }, { n: 'Chipá', p: 120 },
+  ]},
+  { cat: 'Sanguches', items: [
+    { n: 'Sanguche caliente caprese', p: 250 },
+    { n: 'Tostón de palta y champi', p: 340 },
+    { n: 'Sanguche de tempeh', p: 380 },
+    { n: 'Tostón de gírgolas', p: 390 },
+    { n: 'Hamburguesa de Lions Mane', p: 520 },
+  ]},
+];
+const TABLES = Array.from({ length: 8 }, (_, i) => i + 1);
+const TIP_PRESETS = [0, 10, 15, 20];
+
+let orders = {};
+let history = [];
+let view = 'home';
+let activeTable = null;
+let activeCat = MENU[0].cat;
+let expandedTicket = null;
+let editingTicket = null;
+let tipMode = null;
+let tipCustom = '';
+let ready = { orders: false, history: false };
+
+function persist() {
+  ordersRef.set(orders);
+  historyRef.set(history);
+}
+
+ordersRef.on('value', snapshot => {
+  orders = snapshot.val() || {};
+  ready.orders = true;
+  if (ready.history) render();
+});
+historyRef.on('value', snapshot => {
+  history = snapshot.val() || [];
+  ready.history = true;
+  if (ready.orders) render();
+});
+
+function fmt(n) {
+  return Math.round(n).toLocaleString('es-UY');
+}
+
+function tableTotal(t) {
+  const cur = orders[t] || [];
+  return cur.reduce((s, i) => s + i.p * i.qty, 0);
+}
+
+function getTipAmount(subtotal) {
+  if (tipMode === 'custom') return Math.round(Number(tipCustom) || 0);
+  if (typeof tipMode === 'number') return Math.round(subtotal * (tipMode / 100));
+  return 0;
+}
+
+function addItem(table, item) {
+  const cur = orders[table] || [];
+  const idx = cur.findIndex(i => i.n === item.n);
+  if (idx >= 0) cur[idx].qty += 1;
+  else cur.push({ n: item.n, p: item.p, qty: 1 });
+  orders[table] = cur;
+  persist(); render();
+}
+
+function removeItem(table, name) {
+  let cur = orders[table] || [];
+  const idx = cur.findIndex(i => i.n === name);
+  if (idx < 0) return;
+  if (cur[idx].qty > 1) cur[idx].qty -= 1;
+  else cur = cur.filter(i => i.n !== name);
+  orders[table] = cur;
+  persist(); render();
+}
+
+function closeTable(table) {
+  const cur = orders[table] || [];
+  if (cur.length === 0) return;
+  const subtotal = tableTotal(table);
+  const tip = getTipAmount(subtotal);
+  history.unshift({ id: Date.now(), table, items: cur, subtotal, tip, total: subtotal + tip, closedAt: new Date().toISOString() });
+  delete orders[table];
+  persist();
+  view = 'home'; activeTable = null; tipMode = null; tipCustom = '';
+  render();
+}
+
+function deleteTicket(id) {
+  history = history.filter(h => h.id !== id);
+  expandedTicket = null;
+  persist(); render();
+}
+
+function updateTicketQty(id, name, delta) {
+  const h = history.find(x => x.id === id);
+  if (!h) return;
+  h.items = h.items.map(i => i.n === name ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0);
+  h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
+  h.total = h.subtotal + (h.tip || 0);
+  persist(); render();
+}
+
+function addItemToTicket(id, item) {
+  const h = history.find(x => x.id === id);
+  if (!h) return;
+  const idx = h.items.findIndex(i => i.n === item.n);
+  if (idx >= 0) h.items[idx].qty += 1;
+  else h.items.push({ n: item.n, p: item.p, qty: 1 });
+  h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
+  h.total = h.subtotal + (h.tip || 0);
+  persist(); render();
+}
+
+function updateTicketTip(id, newTip) {
+  const h = history.find(x => x.id === id);
+  if (!h) return;
+  h.tip = Math.max(0, Math.round(newTip) || 0);
+  h.total = h.subtotal + h.tip;
+  persist(); render();
+}
+
+function todayHistory() {
+  const today = new Date().toDateString();
+  return history.filter(h => new Date(h.closedAt).toDateString() === today);
+}
+
+function exportCSV() {
+  const rows = [['Mesa', 'Fecha/hora', 'Item', 'Cantidad', 'Precio unitario', 'Subtotal item', 'Propina mesa', 'Total mesa']];
+  history.forEach(h => {
+    h.items.forEach(i => {
+      rows.push([h.table, new Date(h.closedAt).toLocaleString('es-UY'), i.n, i.qty, i.p, i.p * i.qty, h.tip || 0, h.total]);
+    });
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url; a.download = `clorofila_ventas_${dateStr}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function categoryTabs(current, onSelect) {
+  return `<div class="cats">${MENU.map(c => `
+    <button class="cat-btn ${c.cat === current ? 'active' : ''}" onclick="${onSelect}('${c.cat}')">${c.cat}</button>
+  `).join('')}</div>`;
+}
+
+function menuGrid(cat, onPick) {
+  const c = MENU.find(m => m.cat === cat);
+  return `<div class="menu-grid">${c.items.map(item => `
+    <button class="menu-item" onclick="${onPick}('${item.n.replace(/'/g, "\\'")}', ${item.p})">
+      <div class="name">${item.n}</div>
+      <div class="price">$${item.p}</div>
+    </button>
+  `).join('')}</div>`;
+}
+
+window.setActiveCatHome = function(cat) { activeCat = cat; render(); };
+window.setActiveCatTicket = function(cat) { activeCat = cat; render(); };
+window.pickItemForTable = function(name, price) { addItem(activeTable, { n: name, p: price }); };
+window.pickItemForTicket = function(name, price) { addItemToTicket(editingTicket, { n: name, p: price }); };
+
+window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; render(); };
+window.goHistory = function() { view = 'history'; render(); };
+window.openTable = function(t) { view = 'table'; activeTable = t; tipMode = null; tipCustom = ''; render(); };
+window.setTipMode = function(m) { tipMode = m; tipCustom = ''; render(); };
+window.setTipCustom = function(v) { tipCustom = v; tipMode = 'custom'; render(); };
+window.doCloseTable = function() { closeTable(activeTable); };
+window.doRemoveItem = function(name) { removeItem(activeTable, name); };
+window.toggleTicket = function(id) { expandedTicket = expandedTicket === id ? null : id; render(); };
+window.startEditTicket = function(id) { editingTicket = id; view = 'edit'; render(); };
+window.doDeleteTicket = function(id) { if (confirm('¿Eliminar esta venta del historial?')) deleteTicket(id); };
+window.doUpdateTicketQty = function(id, name, delta) { updateTicketQty(id, name, delta); };
+window.doUpdateTicketTip = function(id, val) { updateTicketTip(id, Number(val)); };
+window.doExportCSV = function() { exportCSV(); };
+
+function renderHome() {
+  const th = todayHistory();
+  const total = th.reduce((s, h) => s + h.total, 0);
+  return `
+    <div class="row">
+      <h2>Clorofila — Mesas</h2>
+      <button onclick="goHistory()">Ver caja</button>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:12px;color:#666;">Cobrado hoy (con propinas)</div>
+      <div style="font-size:22px;font-weight:bold;color:var(--green);">$${fmt(total)}</div>
+    </div>
+    <div class="table-grid">
+      ${TABLES.map(t => {
+        const cur = orders[t] || [];
+        const busy = cur.length > 0;
+        const tot = tableTotal(t);
+        return `<button class="table-btn ${busy ? 'busy' : ''}" onclick="openTable(${t})">
+          <div style="font-size:16px;font-weight:bold;margin-bottom:4px;">Mesa ${t}</div>
+          ${busy
+            ? `<div style="font-size:12px;color:#666;">${cur.reduce((s,i)=>s+i.qty,0)} ítems</div>
+               <div style="font-size:14px;color:var(--green);font-weight:bold;">$${fmt(tot)}</div>`
+            : `<div style="font-size:12px;color:#aaa;">Libre</div>`}
+        </button>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderTable() {
+  const cur = orders[activeTable] || [];
+  const subtotal = tableTotal(activeTable);
+  const tip = getTipAmount(subtotal);
+  return `
+    <div class="row">
+      <button class="btn-back" onclick="goHome()">← Mesas</button>
+      <h2>Mesa ${activeTable}</h2>
+      <div style="width:70px;"></div>
+    </div>
+    <div class="card">
+      ${cur.length === 0 ? '<p class="empty">Sin pedidos todavía</p>' : cur.map(i => `
+        <div class="item-row">
+          <span style="font-size:14px;flex:1;">${i.n}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="qty-btn" onclick="doRemoveItem('${i.n.replace(/'/g,"\\'")}')">−</button>
+            <span style="min-width:18px;text-align:center;font-size:14px;">${i.qty}</span>
+            <button class="qty-btn" onclick="pickItemForTable('${i.n.replace(/'/g,"\\'")}', ${i.p})">+</button>
+            <span style="font-size:14px;min-width:60px;text-align:right;">$${fmt(i.p*i.qty)}</span>
+          </div>
+        </div>
+      `).join('')}
+      ${cur.length > 0 ? `<div style="display:flex;justify-content:space-between;padding-top:10px;font-size:14px;">
+        <span>Subtotal</span><span>$${fmt(subtotal)}</span>
+      </div>` : ''}
+    </div>
+    ${cur.length > 0 ? `
+    <div style="margin-bottom:12px;">
+      <div style="font-size:13px;color:#666;margin-bottom:6px;">Propina</div>
+      <div class="tip-presets">
+        ${TIP_PRESETS.map(p => `<button class="tip-btn ${tipMode === p ? 'active' : ''}" onclick="setTipMode(${p})">${p === 0 ? 'Sin' : p + '%'}</button>`).join('')}
+        <button class="tip-btn ${tipMode === 'custom' ? 'active' : ''}" onclick="setTipMode('custom')">Otro</button>
+      </div>
+      ${tipMode === 'custom' ? `<input type="number" value="${tipCustom}" placeholder="Monto de propina en $" oninput="setTipCustom(this.value)">` : ''}
+    </div>
+    <div class="summary">
+      <div class="summary-row"><span>Propina</span><span>$${fmt(tip)}</span></div>
+      <div class="summary-total"><span>Total a cobrar</span><span>$${fmt(subtotal+tip)}</span></div>
+    </div>
+    ` : ''}
+    <button class="close-btn" ${cur.length === 0 ? 'disabled' : ''} onclick="doCloseTable()">Cerrar mesa y cobrar ($${fmt(subtotal+tip)})</button>
+    ${categoryTabs(activeCat, 'setActiveCatTicket')}
+    ${menuGrid(activeCat, 'pickItemForTable')}
+  `;
+}
+
+function renderEdit() {
+  const h = history.find(x => x.id === editingTicket);
+  if (!h) { view = 'history'; return renderHistory(); }
+  return `
+    <div class="row">
+      <button class="btn-back" onclick="goHistory()">← Volver</button>
+      <h2 style="font-size:18px;">Editar mesa ${h.table}</h2>
+      <div style="width:70px;"></div>
+    </div>
+    <div style="font-size:12px;color:#888;margin-bottom:12px;">${new Date(h.closedAt).toLocaleString('es-UY')}</div>
+    <div class="card">
+      ${h.items.length === 0 ? '<p class="empty">Sin ítems</p>' : h.items.map(i => `
+        <div class="item-row">
+          <span style="font-size:14px;flex:1;">${i.n}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="qty-btn" onclick="doUpdateTicketQty(${h.id}, '${i.n.replace(/'/g,"\\'")}', -1)">−</button>
+            <span style="min-width:18px;text-align:center;font-size:14px;">${i.qty}</span>
+            <button class="qty-btn" onclick="doUpdateTicketQty(${h.id}, '${i.n.replace(/'/g,"\\'")}', 1)">+</button>
+            <span style="font-size:14px;min-width:60px;text-align:right;">$${fmt(i.p*i.qty)}</span>
+          </div>
+        </div>
+      `).join('')}
+      <div style="display:flex;justify-content:space-between;padding-top:10px;font-size:14px;">
+        <span>Subtotal</span><span>$${fmt(h.subtotal)}</span>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:13px;color:#666;margin-bottom:6px;">Propina</div>
+      <input type="number" value="${h.tip || 0}" oninput="doUpdateTicketTip(${h.id}, this.value)">
+    </div>
+    <div class="summary"><div class="summary-total"><span>Total</span><span>$${fmt(h.total)}</span></div></div>
+    <button class="danger-btn" onclick="doDeleteTicket(${h.id})">Eliminar esta venta</button>
+    <div style="font-size:13px;color:#666;margin-bottom:8px;">Agregar un ítem</div>
+    ${categoryTabs(activeCat, 'setActiveCatTicket')}
+    ${menuGrid(activeCat, 'pickItemForTicket')}
+  `;
+}
+
+function renderHistory() {
+  const th = todayHistory();
+  const subtotal = th.reduce((s, h) => s + h.subtotal, 0);
+  const tips = th.reduce((s, h) => s + (h.tip || 0), 0);
+  const total = subtotal + tips;
+  const salesByItem = {};
+  th.forEach(h => h.items.forEach(i => {
+    if (!salesByItem[i.n]) salesByItem[i.n] = { qty: 0, total: 0 };
+    salesByItem[i.n].qty += i.qty;
+    salesByItem[i.n].total += i.p * i.qty;
+  }));
+  const salesList = Object.entries(salesByItem).sort((a, b) => b[1].total - a[1].total);
+
+  return `
+    <div class="row">
+      <button class="btn-back" onclick="goHome()">← Volver</button>
+      <h2>Caja del día</h2>
+      <div style="width:70px;"></div>
+    </div>
+    <div class="card">
+      <div style="text-align:center;margin-bottom:10px;">
+        <div style="font-size:13px;color:#666;">Total cobrado hoy (${th.length} mesas)</div>
+        <div style="font-size:28px;font-weight:bold;color:var(--green);">$${fmt(total)}</div>
+      </div>
+      <div style="display:flex;justify-content:space-around;border-top:1px solid var(--line);padding-top:10px;">
+        <div class="stat-box"><div class="stat-label">Ventas</div><div class="stat-value">$${fmt(subtotal)}</div></div>
+        <div class="stat-box"><div class="stat-label">Propinas</div><div class="stat-value">$${fmt(tips)}</div></div>
+      </div>
+    </div>
+    <button class="export-btn" onclick="doExportCSV()">Descargar historial completo (CSV)</button>
+    ${salesList.length > 0 ? `
+      <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">Qué se vendió hoy</div>
+      <div style="border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+        ${salesList.map(([name, d], idx) => `
+          <div style="display:flex;justify-content:space-between;padding:8px 12px;${idx > 0 ? 'border-top:1px solid #f0f0f0;' : ''}font-size:13px;">
+            <span>${name} <span style="color:#999;">× ${d.qty}</span></span>
+            <span style="font-weight:bold;">$${fmt(d.total)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+    <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">Mesas cerradas</div>
+    ${history.length === 0 ? '<p class="empty">Todavía no se cerró ninguna mesa.</p>' : history.map(h => `
+      <div class="ticket">
+        <div class="ticket-head" onclick="toggleTicket(${h.id})">
+          <div>
+            <div style="font-weight:bold;font-size:14px;">Mesa ${h.table}</div>
+            <div style="font-size:12px;color:#888;">${new Date(h.closedAt).toLocaleString('es-UY')}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:bold;font-size:14px;">$${fmt(h.total)}</div>
+            ${h.tip > 0 ? `<div style="font-size:11px;color:#888;">+$${fmt(h.tip)} propina</div>` : ''}
+          </div>
+        </div>
+        ${expandedTicket === h.id ? `
+          <div class="ticket-detail">
+            ${h.items.map(i => `<div style="display:flex;justify-content:space-between;padding:3px 0;">
+              <span>${i.n} × ${i.qty}</span><span>$${fmt(i.p*i.qty)}</span>
+            </div>`).join('')}
+            <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid #eee;margin-top:6px;color:#666;">
+              <span>Subtotal</span><span>$${fmt(h.subtotal)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;color:#666;">
+              <span>Propina</span><span>$${fmt(h.tip || 0)}</span>
+            </div>
+            <button class="edit-btn" onclick="startEditTicket(${h.id})">Editar esta venta</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('')}
+  `;
+}
+
+function render() {
+  const app = document.getElementById('app');
+  if (view === 'home') app.innerHTML = renderHome();
+  else if (view === 'table') app.innerHTML = renderTable();
+  else if (view === 'edit') app.innerHTML = renderEdit();
+  else if (view === 'history') app.innerHTML = renderHistory();
+}
+
+document.getElementById('app').innerHTML = '<p class="empty">Conectando...</p>';
+</script>
+</body>
+</html>
