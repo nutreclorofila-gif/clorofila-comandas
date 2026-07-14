@@ -196,6 +196,8 @@ let authed = localStorage.getItem('clorofila_authed') === '1';
 let pinInput = '';
 let lastClosed = null;
 let toastTimer = null;
+let kitchenFilter = 'todos';
+let wasAllReady = {};
 
 function persistTable(table) {
   if (orders[table]) ordersRef.child(table).set(orders[table]);
@@ -206,8 +208,11 @@ function persistHistoryEntry(id) {
   else historyRef.child(id).remove();
 }
 
+let firstOrdersLoad = true;
 ordersRef.on('value', snapshot => {
   orders = snapshot.val() || {};
+  if (!firstOrdersLoad) checkReadyAlerts();
+  firstOrdersLoad = false;
   ready.orders = true;
   if (ready.history) render();
 });
@@ -223,6 +228,45 @@ connectedRef.on('value', snapshot => {
 
 function fmt(n) {
   return Math.round(n).toLocaleString('es-UY');
+}
+
+function elapsedLabel(startedAt) {
+  if (!startedAt) return '';
+  const mins = Math.max(0, Math.round((Date.now() - startedAt) / 60000));
+  return mins < 1 ? 'recién' : `hace ${mins} min`;
+}
+
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  return audioCtx;
+}
+function playReadyAlert() {
+  try {
+    const ctx = ensureAudio();
+    if (ctx) {
+      [0, 0.18].forEach(delay => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.2, ctx.currentTime + delay);
+        o.start(ctx.currentTime + delay);
+        o.stop(ctx.currentTime + delay + 0.15);
+      });
+    }
+  } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+function checkReadyAlerts() {
+  TABLES.forEach(t => {
+    const items = tableItems(t);
+    const allReady = items.length > 0 && items.every(i => i.ready);
+    if (allReady && !wasAllReady[t]) playReadyAlert();
+    wasAllReady[t] = allReady;
+  });
 }
 
 function esc(s) {
@@ -439,6 +483,7 @@ window.doEditCustomItemInTicket = function(id, name) { editCustomItemInTicket(id
 window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; render(); };
 window.goHistory = function() { view = 'history'; render(); };
 window.goKitchen = function() { view = 'kitchen'; render(); };
+window.setKitchenFilter = function(f) { kitchenFilter = f; render(); };
 window.openTable = function(t) { view = 'table'; activeTable = t; tipMode = null; tipCustom = ''; render(); };
 window.setTipMode = function(m) { tipMode = m; tipCustom = ''; render(); };
 window.setTipCustom = function(v) { tipCustom = v; tipMode = 'custom'; render(); };
@@ -454,6 +499,7 @@ window.doUpdateTicketTip = function(id, val) { updateTicketTip(id, Number(val));
 window.doExportCSV = function() { exportCSV(); };
 window.doUndoClose = function() { undoCloseTable(); };
 window.pinPress = function(d) {
+  ensureAudio();
   if (pinInput.length >= 4) return;
   pinInput += d;
   if (pinInput.length === 4) {
@@ -518,10 +564,12 @@ function renderHome() {
         const busy = items.length > 0;
         const tot = tableTotal(t);
         const allReady = busy && items.every(i => i.ready);
+        const order = orders[t];
         return `<button class="table-btn ${busy ? 'busy' : ''} ${allReady ? 'all-ready' : ''}" onclick="openTable(${t})">
           <div style="font-size:16px;font-weight:bold;margin-bottom:4px;">Mesa ${t}</div>
           ${busy
             ? `<div style="font-size:12px;color:#666;">${items.reduce((s,i)=>s+i.qty,0)} ítems ${allReady ? '· todo listo' : ''}</div>
+               <div style="font-size:11px;color:#999;">${elapsedLabel(order && order.startedAt)}</div>
                <div style="font-size:14px;color:var(--green);font-weight:bold;">$${fmt(tot)}</div>`
             : `<div style="font-size:12px;color:#aaa;">Libre</div>`}
         </button>`;
@@ -589,6 +637,8 @@ function renderKitchen() {
   const pending = TABLES
     .map(t => ({ t, order: orders[t] }))
     .filter(x => x.order && x.order.items && x.order.items.length > 0)
+    .map(x => ({ t: x.t, order: x.order, items: x.order.items.filter(i => kitchenFilter === 'todos' || itemTipo(i) === kitchenFilter) }))
+    .filter(x => x.items.length > 0)
     .sort((a, b) => (a.order.startedAt || 0) - (b.order.startedAt || 0));
   return `
     <div class="row">
@@ -596,13 +646,18 @@ function renderKitchen() {
       <h2>Cocina</h2>
       <div style="width:70px;"></div>
     </div>
-    ${pending.length === 0 ? '<p class="empty">No hay mesas con pedidos pendientes.</p>' : pending.map(({t, order}) => `
+    <div class="cats">
+      <button class="cat-btn ${kitchenFilter === 'todos' ? 'active' : ''}" onclick="setKitchenFilter('todos')">Todos</button>
+      <button class="cat-btn ${kitchenFilter === 'comida' ? 'active' : ''}" onclick="setKitchenFilter('comida')">Comida</button>
+      <button class="cat-btn ${kitchenFilter === 'bebida' ? 'active' : ''}" onclick="setKitchenFilter('bebida')">Bebida</button>
+    </div>
+    ${pending.length === 0 ? '<p class="empty">No hay mesas con pedidos pendientes.</p>' : pending.map(({t, order, items}) => `
       <div class="kitchen-table">
         <div class="kitchen-table-head">
           <span>Mesa ${t}</span>
-          <span style="font-weight:normal;font-size:12px;">${new Date(order.startedAt).toLocaleTimeString('es-UY', {hour:'2-digit',minute:'2-digit'})}</span>
+          <span style="font-weight:normal;font-size:12px;">${new Date(order.startedAt).toLocaleTimeString('es-UY', {hour:'2-digit',minute:'2-digit'})} · ${elapsedLabel(order.startedAt)}</span>
         </div>
-        ${order.items.map(i => `
+        ${items.map(i => `
           <div class="kitchen-item ${i.ready ? 'is-ready' : ''}">
             <div>
               <span class="kitchen-tag ${itemTipo(i)}">${itemTipo(i) === 'bebida' ? 'Bebida' : 'Comida'}</span>
@@ -744,6 +799,8 @@ function render() {
 
 if (!authed) render();
 else document.getElementById('app').innerHTML = '<p class="empty">Conectando...</p>';
+
+setInterval(() => { if (view === 'home' || view === 'kitchen') render(); }, 30000);
 </script>
 </body>
 </html>
