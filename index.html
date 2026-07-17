@@ -107,6 +107,29 @@
   .pin-dot.filled { background: var(--green); }
   .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .keypad button { padding: 18px 0; font-size: 20px; border-radius: 10px; }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .modal-box {
+    background: white; border-radius: 16px 16px 0 0; padding: 20px 16px 24px;
+    width: 100%; max-width: 480px; box-sizing: border-box;
+  }
+  .modal-title { font-size: 17px; font-weight: bold; margin-bottom: 14px; }
+  .modal-field { margin-bottom: 12px; }
+  .modal-field label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+  .modal-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+  .modal-toggle button { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: white; }
+  .modal-toggle button.active { background: var(--green); color: white; border-color: var(--green); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .modal-actions button { flex: 1; padding: 12px; border-radius: 8px; font-size: 14px; }
+  .modal-cancel { border: 1px solid #ccc; background: white; }
+  .modal-save { border: none; background: var(--green); color: white; font-weight: bold; }
+  .modal-save:disabled { background: #ccc; }
+  .split-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .split-stepper { display: flex; align-items: center; gap: 10px; }
+  .split-stepper button { width: 32px; height: 32px; border-radius: 8px; padding: 0; }
+  .split-result { background: #EAF0EC; border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -199,6 +222,13 @@ let lastClosed = null;
 let toastTimer = null;
 let kitchenFilter = 'todos';
 let wasAllReady = {};
+let modal = null;
+let modalNoteText = '';
+let modalCustomName = '';
+let modalCustomPrice = '';
+let modalCustomTipo = 'comida';
+let modalError = '';
+let splitCount = 2;
 
 function newItemId() {
   return 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -357,27 +387,31 @@ function addItem(table, item) {
   render();
 }
 
-function promptCustomItem(existing) {
-  const name = prompt('Nombre del producto:', existing ? existing.n : '');
-  if (name === null || !name.trim()) return null;
-  const priceStr = prompt('Precio ($):', existing ? String(existing.p) : '');
-  const price = Math.round(Number(priceStr));
-  if (!price || price <= 0) { alert('Precio inválido, no se guardó.'); return null; }
-  const wantBebida = confirm('¿Es una bebida?\n(Aceptar = Bebida, Cancelar = Comida)');
-  return { n: name.trim(), p: price, tipo: wantBebida ? 'bebida' : 'comida' };
-}
-
-function editCustomItem(table, oldName) {
-  if (!orders[table]) return;
-  ensureItemsObject(table);
-  const id = findItemId(table, oldName);
-  if (!id) return;
-  const item = orders[table].items[id];
-  const edited = promptCustomItem(item);
-  if (!edited) return;
-  item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
-  persistItem(table, id, item);
-  render();
+function applyCustomItem(target, edited) {
+  if (target.kind === 'addTable') {
+    addItem(target.table, edited);
+  } else if (target.kind === 'editTable') {
+    if (!orders[target.table]) return;
+    ensureItemsObject(target.table);
+    const id = findItemId(target.table, target.oldName);
+    if (!id) return;
+    const item = orders[target.table].items[id];
+    item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
+    persistItem(target.table, id, item);
+    render();
+  } else if (target.kind === 'addTicket') {
+    addItemToTicket(target.ticketId, edited);
+  } else if (target.kind === 'editTicket') {
+    const h = history[target.ticketId];
+    if (!h) return;
+    const item = h.items.find(i => i.n === target.oldName);
+    if (!item) return;
+    item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
+    h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
+    h.total = h.subtotal + (h.tip || 0);
+    persistHistoryEntry(target.ticketId);
+    render();
+  }
 }
 
 function removeItem(table, name) {
@@ -408,14 +442,12 @@ function toggleItemReady(table, name) {
   render();
 }
 
-function setItemNote(table, name) {
+function setItemNote(table, name, note) {
   if (!orders[table]) return;
   ensureItemsObject(table);
   const id = findItemId(table, name);
   if (!id) return;
   const item = orders[table].items[id];
-  const note = prompt('Nota para "' + name + '" (ej: sin azúcar, para llevar):', item.note || '');
-  if (note === null) return;
   item.note = note.trim();
   persistItem(table, id, item);
   render();
@@ -472,19 +504,6 @@ function addItemToTicket(id, item) {
   const idx = h.items.findIndex(i => i.n === item.n);
   if (idx >= 0) h.items[idx].qty += 1;
   else h.items.push({ n: item.n, p: item.p, qty: 1, ready: true, note: '', ...(item.tipo ? { tipo: item.tipo } : {}) });
-  h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
-  h.total = h.subtotal + (h.tip || 0);
-  persistHistoryEntry(id); render();
-}
-
-function editCustomItemInTicket(id, oldName) {
-  const h = history[id];
-  if (!h) return;
-  const item = h.items.find(i => i.n === oldName);
-  if (!item) return;
-  const edited = promptCustomItem(item);
-  if (!edited) return;
-  item.n = edited.n; item.p = edited.p; item.tipo = edited.tipo;
   h.subtotal = h.items.reduce((s, i) => s + i.p * i.qty, 0);
   h.total = h.subtotal + (h.tip || 0);
   persistHistoryEntry(id); render();
@@ -559,27 +578,72 @@ window.setActiveCatTicket = function(cat) { activeCat = cat; render(); };
 window.pickItemForTable = function(name, price) { addItem(activeTable, { n: name, p: price }); };
 window.pickItemForTicket = function(name, price) { addItemToTicket(editingTicket, { n: name, p: price }); };
 window.doAddCustomItem = function() {
-  const item = promptCustomItem();
-  if (item) addItem(activeTable, item);
+  modal = { kind: 'addTable', table: activeTable };
+  modalCustomName = ''; modalCustomPrice = ''; modalCustomTipo = 'comida'; modalError = '';
+  render();
 };
-window.doEditCustomItem = function(table, name) { editCustomItem(table, name); };
+window.doEditCustomItem = function(table, name) {
+  const id = findItemId(table, name);
+  const item = id ? orders[table].items[id] : null;
+  modal = { kind: 'editTable', table, oldName: name };
+  modalCustomName = item ? item.n : name; modalCustomPrice = item ? String(item.p) : ''; modalCustomTipo = (item && item.tipo) || 'comida'; modalError = '';
+  render();
+};
 window.doAddCustomItemToTicket = function() {
-  const item = promptCustomItem();
-  if (item) addItemToTicket(editingTicket, item);
+  modal = { kind: 'addTicket', ticketId: editingTicket };
+  modalCustomName = ''; modalCustomPrice = ''; modalCustomTipo = 'comida'; modalError = '';
+  render();
 };
-window.doEditCustomItemInTicket = function(id, name) { editCustomItemInTicket(id, name); };
+window.doEditCustomItemInTicket = function(id, name) {
+  const h = history[id];
+  const item = h && h.items.find(i => i.n === name);
+  modal = { kind: 'editTicket', ticketId: id, oldName: name };
+  modalCustomName = item ? item.n : name; modalCustomPrice = item ? String(item.p) : ''; modalCustomTipo = (item && item.tipo) || 'comida'; modalError = '';
+  render();
+};
+window.setModalCustomTipo = function(t) { modalCustomTipo = t; render(); };
+window.saveCustomItemModal = function() {
+  const name = modalCustomName.trim();
+  const price = Math.round(Number(modalCustomPrice));
+  if (!name) { modalError = 'Ingresá un nombre.'; render(); return; }
+  if (!price || price <= 0) { modalError = 'Ingresá un precio válido.'; render(); return; }
+  applyCustomItem(modal, { n: name, p: price, tipo: modalCustomTipo });
+  modal = null;
+  render();
+};
+window.doOpenNoteModal = function(table, name) {
+  const id = findItemId(table, name);
+  const item = id ? orders[table].items[id] : null;
+  modal = { kind: 'note', table, name };
+  modalNoteText = item ? (item.note || '') : '';
+  render();
+};
+window.saveNoteModal = function() {
+  setItemNote(modal.table, modal.name, modalNoteText);
+  modal = null;
+  render();
+};
+window.doOpenCloseConfirm = function() {
+  modal = { kind: 'confirmClose', table: activeTable };
+  render();
+};
+window.confirmCloseTable = function() {
+  const table = modal.table;
+  modal = null;
+  closeTable(table);
+};
+window.closeModal = function() { modal = null; render(); };
 
-window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; render(); };
+window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; modal = null; render(); };
 window.goHistory = function() { view = 'history'; render(); };
 window.goKitchen = function() { view = 'kitchen'; render(); };
 window.setKitchenFilter = function(f) { kitchenFilter = f; render(); };
-window.openTable = function(t) { view = 'table'; activeTable = t; tipMode = null; tipCustom = ''; render(); };
+window.openTable = function(t) { view = 'table'; activeTable = t; tipMode = null; tipCustom = ''; splitCount = 2; render(); };
 window.setTipMode = function(m) { tipMode = m; tipCustom = ''; render(); };
 window.setTipCustom = function(v) { tipCustom = v; tipMode = 'custom'; render(); };
-window.doCloseTable = function() { closeTable(activeTable); };
 window.doRemoveItem = function(name) { removeItem(activeTable, name); };
 window.doToggleReady = function(table, name) { toggleItemReady(table, name); };
-window.doSetNote = function(table, name) { setItemNote(table, name); };
+window.setSplitCount = function(n) { splitCount = Math.max(1, n); render(); };
 window.toggleTicket = function(id) { expandedTicket = expandedTicket === id ? null : id; render(); };
 window.startEditTicket = function(id) { editingTicket = id; view = 'edit'; render(); };
 window.doDeleteTicket = function(id) { if (confirm('¿Eliminar esta venta del historial?')) deleteTicket(id); };
@@ -631,6 +695,68 @@ function connectionBanner() {
 function undoToast() {
   if (!lastClosed) return '';
   return `<div class="toast">Mesa ${lastClosed.table} cerrada <button onclick="doUndoClose()">Deshacer</button></div>`;
+}
+
+function renderModal() {
+  if (!modal) return '';
+  if (modal.kind === 'note') {
+    return `<div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box">
+        <div class="modal-title">Nota para "${esc(modal.name)}"</div>
+        <div class="modal-field">
+          <input type="text" value="${esc(modalNoteText)}" placeholder="Ej: sin azúcar, para llevar" oninput="modalNoteText=this.value" autofocus>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-cancel" onclick="closeModal()">Cancelar</button>
+          <button class="modal-save" onclick="saveNoteModal()">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (modal.kind === 'addTable' || modal.kind === 'editTable' || modal.kind === 'addTicket' || modal.kind === 'editTicket') {
+    const isEdit = modal.kind.startsWith('edit');
+    return `<div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box">
+        <div class="modal-title">${isEdit ? 'Editar producto' : 'Producto fuera del menú'}</div>
+        <div class="modal-field">
+          <label>Nombre</label>
+          <input type="text" value="${esc(modalCustomName)}" placeholder="Nombre del producto" oninput="modalCustomName=this.value" autofocus>
+        </div>
+        <div class="modal-field">
+          <label>Precio ($)</label>
+          <input type="number" value="${esc(modalCustomPrice)}" placeholder="0" oninput="modalCustomPrice=this.value">
+        </div>
+        <div class="modal-toggle">
+          <button class="${modalCustomTipo === 'comida' ? 'active' : ''}" onclick="setModalCustomTipo('comida')">🍽️ Comida</button>
+          <button class="${modalCustomTipo === 'bebida' ? 'active' : ''}" onclick="setModalCustomTipo('bebida')">🥤 Bebida</button>
+        </div>
+        ${modalError ? `<div style="color:var(--red);font-size:12px;margin-bottom:8px;">${esc(modalError)}</div>` : ''}
+        <div class="modal-actions">
+          <button class="modal-cancel" onclick="closeModal()">Cancelar</button>
+          <button class="modal-save" onclick="saveCustomItemModal()">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (modal.kind === 'confirmClose') {
+    const subtotal = tableTotal(modal.table);
+    const tip = getTipAmount(subtotal);
+    return `<div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box">
+        <div class="modal-title">¿Cerrar Mesa ${modal.table} y cobrar?</div>
+        <div class="summary">
+          <div class="summary-row"><span>Subtotal</span><span>$${fmt(subtotal)}</span></div>
+          <div class="summary-row"><span>Propina</span><span>$${fmt(tip)}</span></div>
+          <div class="summary-total"><span>Total</span><span>$${fmt(subtotal+tip)}</span></div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-cancel" onclick="closeModal()">Cancelar</button>
+          <button class="modal-save" onclick="confirmCloseTable()">Confirmar cobro</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return '';
 }
 
 function renderHome() {
@@ -690,7 +816,7 @@ function renderTable() {
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
             ${isCustomItem(i.n) ? `<button class="note-btn" onclick="doEditCustomItem(${activeTable}, '${i.n.replace(/'/g,"\\'")}')">✎</button>` : ''}
-            <button class="note-btn" onclick="doSetNote(${activeTable}, '${i.n.replace(/'/g,"\\'")}')">📝</button>
+            <button class="note-btn" onclick="doOpenNoteModal(${activeTable}, '${i.n.replace(/'/g,"\\'")}')">📝</button>
             <button class="qty-btn" onclick="doRemoveItem('${i.n.replace(/'/g,"\\'")}')">−</button>
             <span style="min-width:18px;text-align:center;font-size:14px;">${i.qty}</span>
             <button class="qty-btn" onclick="pickItemForTable('${i.n.replace(/'/g,"\\'")}', ${i.p})">+</button>
@@ -715,8 +841,18 @@ function renderTable() {
       <div class="summary-row"><span>Propina</span><span>$${fmt(tip)}</span></div>
       <div class="summary-total"><span>Total a cobrar</span><span>$${fmt(subtotal+tip)}</span></div>
     </div>
+    <div class="split-row">
+      <span style="font-size:13px;color:#666;">Dividir entre</span>
+      <div class="split-stepper">
+        <button onclick="setSplitCount(${splitCount - 1})">−</button>
+        <span style="min-width:16px;text-align:center;">${splitCount}</span>
+        <button onclick="setSplitCount(${splitCount + 1})">+</button>
+        <span style="font-size:13px;color:#666;">${pl(splitCount,'persona','personas')}</span>
+      </div>
+    </div>
+    ${splitCount > 1 ? `<div class="split-result">$${fmt((subtotal+tip)/splitCount)} <span style="font-size:12px;color:#666;">por persona</span></div>` : ''}
     ` : ''}
-    <button class="close-btn" ${cur.length === 0 ? 'disabled' : ''} onclick="doCloseTable()">Cerrar mesa y cobrar ($${fmt(subtotal+tip)})</button>
+    <button class="close-btn" ${cur.length === 0 ? 'disabled' : ''} onclick="doOpenCloseConfirm()">Cerrar mesa y cobrar ($${fmt(subtotal+tip)})</button>
     ${categoryTabs(activeCat, 'setActiveCatTicket')}
     ${menuGrid(activeCat, 'pickItemForTable')}
     <button class="export-btn" style="margin-top:8px;" onclick="doAddCustomItem()">+ Otro (producto fuera del menú)</button>
@@ -885,7 +1021,7 @@ function render() {
   else if (view === 'kitchen') body = renderKitchen();
   else if (view === 'edit') body = renderEdit();
   else if (view === 'history') body = renderHistory();
-  app.innerHTML = connectionBanner() + body + undoToast();
+  app.innerHTML = connectionBanner() + body + undoToast() + renderModal();
 }
 
 if (!authed) render();
