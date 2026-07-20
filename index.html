@@ -230,6 +230,7 @@ let modalCustomPrice = '';
 let modalCustomTipo = 'comida';
 let modalError = '';
 let splitCount = 2;
+let expandedArchiveDay = null;
 
 function newItemId() {
   return 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -280,6 +281,11 @@ historyRef.on('value', snapshot => {
   history = snapshot.val() || {};
   ready.history = true;
   if (ready.orders) render();
+});
+let archive = {};
+archiveRef.on('value', snapshot => {
+  archive = snapshot.val() || {};
+  render();
 });
 connectedRef.on('value', snapshot => {
   connected = snapshot.val();
@@ -483,6 +489,17 @@ function undoCloseTable() {
   render();
 }
 
+function moveTable(fromTable, destNum) {
+  const order = orders[fromTable];
+  if (!order || orders[destNum]) return;
+  orders[destNum] = order;
+  delete orders[fromTable];
+  ordersRef.child(destNum).set(order);
+  ordersRef.child(fromTable).remove();
+  activeTable = destNum;
+  render();
+}
+
 function deleteTicket(id) {
   delete history[id];
   persistHistoryEntry(id);
@@ -535,27 +552,42 @@ function closeDay() {
   );
   if (!ok) return;
   const dateKey = new Date().toISOString().slice(0, 10);
-  archiveRef.child(dateKey).set({ date: dateKey, closedAt: new Date().toISOString(), subtotal, tips, total, count: th.length, entries: th });
+  const archiveEntry = { date: dateKey, closedAt: new Date().toISOString(), subtotal, tips, total, count: th.length, entries: th };
+  archive[dateKey] = archiveEntry;
+  archiveRef.child(dateKey).set(archiveEntry);
   th.forEach(h => { delete history[h.id]; historyRef.child(h.id).remove(); });
   render();
   alert('Día cerrado. Guardado en el archivo — la caja ya está en $0.');
 }
 
-function exportCSV() {
+function entriesToCSV(entries) {
   const rows = [['Mesa', 'Fecha/hora', 'Item', 'Cantidad', 'Precio unitario', 'Subtotal item', 'Propina mesa', 'Total mesa']];
-  historyList().forEach(h => {
+  entries.forEach(h => {
     h.items.forEach(i => {
       rows.push([h.table, new Date(h.closedAt).toLocaleString('es-UY'), i.n, i.qty, i.p, i.p * i.qty, h.tip || 0, h.total]);
     });
   });
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  return rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+}
+
+function downloadCSV(csv, filename) {
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const dateStr = new Date().toISOString().slice(0, 10);
-  a.href = url; a.download = `clorofila_ventas_${dateStr}.csv`;
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function exportCSV() {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  downloadCSV(entriesToCSV(historyList()), `clorofila_ventas_${dateStr}.csv`);
+}
+
+function exportDayCSV(dateKey) {
+  const day = archive[dateKey];
+  if (!day) return;
+  downloadCSV(entriesToCSV(day.entries), `clorofila_ventas_${dateKey}.csv`);
 }
 
 function categoryTabs(current, onSelect) {
@@ -634,9 +666,18 @@ window.confirmCloseTable = function() {
   closeTable(table);
 };
 window.closeModal = function() { modal = null; render(); };
+window.doOpenMoveModal = function() {
+  modal = { kind: 'moveTable', table: activeTable };
+  render();
+};
+window.doMoveTableTo = function(dest) {
+  moveTable(modal.table, dest);
+  modal = null;
+};
 
 window.goHome = function() { view = 'home'; activeTable = null; editingTicket = null; tipMode = null; tipCustom = ''; modal = null; render(); };
 window.goHistory = function() { view = 'history'; render(); };
+window.goArchiveList = function() { view = 'archiveList'; render(); };
 window.goKitchen = function() { view = 'kitchen'; render(); };
 window.setKitchenFilter = function(f) { kitchenFilter = f; render(); };
 window.openTable = function(t) { view = 'table'; activeTable = t; tipMode = null; tipCustom = ''; splitCount = 2; render(); };
@@ -652,6 +693,8 @@ window.doUpdateTicketQty = function(id, name, delta) { updateTicketQty(id, name,
 window.doUpdateTicketTip = function(id, val) { updateTicketTip(id, Number(val)); };
 window.doExportCSV = function() { exportCSV(); };
 window.doCloseDay = function() { closeDay(); };
+window.doExportDayCSV = function(dateKey) { exportDayCSV(dateKey); };
+window.toggleArchiveDay = function(dateKey) { expandedArchiveDay = expandedArchiveDay === dateKey ? null : dateKey; render(); };
 window.doUndoClose = function() { undoCloseTable(); };
 window.pinPress = function(d) {
   ensureAudio();
@@ -757,6 +800,21 @@ function renderModal() {
       </div>
     </div>`;
   }
+  if (modal.kind === 'moveTable') {
+    const freeTables = TABLES.filter(t => t !== modal.table && !orders[t]);
+    return `<div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box">
+        <div class="modal-title">Mover Mesa ${modal.table} a...</div>
+        ${freeTables.length === 0 ? '<p class="empty">No hay mesas libres ahora mismo.</p>' : `
+        <div class="menu-grid">
+          ${freeTables.map(t => `<button class="menu-item" onclick="doMoveTableTo(${t})"><div class="name">Mesa ${t}</div></button>`).join('')}
+        </div>`}
+        <div class="modal-actions" style="margin-top:12px;">
+          <button class="modal-cancel" onclick="closeModal()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+  }
   return '';
 }
 
@@ -803,7 +861,7 @@ function renderTable() {
     <div class="row">
       <button class="btn-back" onclick="goHome()">← Mesas</button>
       <h2>Mesa ${activeTable}</h2>
-      <div style="width:70px;"></div>
+      ${cur.length > 0 ? `<button class="btn-back" onclick="doOpenMoveModal()">Cambiar mesa</button>` : `<div style="width:70px;"></div>`}
     </div>
     <div class="card">
       ${cur.length === 0 ? '<p class="empty">Sin pedidos todavía</p>' : cur.map(i => `
@@ -970,6 +1028,7 @@ function renderHistory() {
     </div>
     <button class="export-btn" onclick="doExportCSV()">Descargar historial completo (CSV)</button>
     <button class="danger-btn" onclick="doCloseDay()">Cerrar el día (reinicia la caja a $0)</button>
+    <button class="edit-btn" style="margin-bottom:16px;" onclick="goArchiveList()">Ver días cerrados anteriores</button>
     ${salesList.length > 0 ? `
       <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">Qué se vendió hoy</div>
       <div style="border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:20px;">
@@ -1013,6 +1072,42 @@ function renderHistory() {
   `;
 }
 
+function renderArchiveList() {
+  const days = Object.values(archive).sort((a, b) => b.date.localeCompare(a.date));
+  return `
+    <div class="row">
+      <button class="btn-back" onclick="goHistory()">← Volver</button>
+      <h2 style="font-size:18px;">Días cerrados</h2>
+      <div style="width:70px;"></div>
+    </div>
+    ${days.length === 0 ? '<p class="empty">Todavía no se cerró ningún día.</p>' : days.map(d => `
+      <div class="ticket">
+        <div class="ticket-head" onclick="toggleArchiveDay('${d.date}')">
+          <div>
+            <div style="font-weight:bold;font-size:14px;">${new Date(d.date + 'T00:00:00').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+            <div style="font-size:12px;color:#888;">${d.count} ${pl(d.count, 'mesa', 'mesas')}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:bold;font-size:14px;">$${fmt(d.total)}</div>
+            ${d.tips > 0 ? `<div style="font-size:11px;color:#888;">+$${fmt(d.tips)} propina</div>` : ''}
+          </div>
+        </div>
+        ${expandedArchiveDay === d.date ? `
+          <div class="ticket-detail">
+            <div style="display:flex;justify-content:space-between;padding:3px 0;color:#666;">
+              <span>Ventas</span><span>$${fmt(d.subtotal)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:3px 0;color:#666;">
+              <span>Propinas</span><span>$${fmt(d.tips)}</span>
+            </div>
+            <button class="export-btn" style="margin-top:10px;margin-bottom:0;" onclick="doExportDayCSV('${d.date}')">Descargar CSV de este día</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('')}
+  `;
+}
+
 function render() {
   const app = document.getElementById('app');
   if (!authed) { app.innerHTML = renderLock(); return; }
@@ -1022,6 +1117,7 @@ function render() {
   else if (view === 'kitchen') body = renderKitchen();
   else if (view === 'edit') body = renderEdit();
   else if (view === 'history') body = renderHistory();
+  else if (view === 'archiveList') body = renderArchiveList();
   app.innerHTML = connectionBanner() + body + undoToast() + renderModal();
 }
 
